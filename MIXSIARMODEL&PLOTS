@@ -1,0 +1,153 @@
+# Code adapted from Brian Stock MIXSIAR for a Maya dietary reconstruction project
+
+setwd("/Users/tribbett/Desktop/OneDrive-Iowa State University")
+
+install.packages("MixSIAR")
+install.packages("tidyverse")
+install.packages("Matrix")
+
+library(MixSIAR)
+library(tidyverse)
+
+# Human data
+# Change factors depending on the comparisons making in the model 
+# model 2: factors are sex and time
+# model 3: factors are region and time 
+# only 2 factors worked for my models 
+# up to three isotopes 
+
+mix <- load_mix_data("3isoconsumer.csv",
+                     iso_names=c("d13Cap", "d13Ccol","d15N"),
+                     factors=c("Status","Period"),
+                     fac_random=c(FALSE,TRUE),
+                     fac_nested=c(FALSE,FALSE),
+                     cont_effects=NULL)
+
+# Convert specific factor variable to numeric
+mix$d13Cap <- unclass(mix$d13Cap)
+mix$d13Ccol <- unclass(mix$d13Ccol)
+mix$d15N <- unclass(mix$d15N)
+
+# Load the food data
+source <- load_source_data("SOURCE2.csv",
+                           source_factors=NULL,
+                           conc_dep=TRUE,
+                           data_type="means",
+                           mix)
+
+# Load TEF data
+discr <- load_discr_data("TEF.csv", mix)
+
+# Make an isospace plot
+plot_data(filename="Statusisospace_plot3isoconsumer", plot_save_pdf=FALSE, plot_save_png=TRUE, mix,source,discr)
+
+# Plot uninformative prior
+prior <- c(1,1,1,1)
+
+# Generate alpha hyperparameters scaling sum(alpha)=n.sources
+prior<- prior*length(prior)/sum(prior)
+
+# The Dirichlet hyperparameters for the alpha.prior cannot be 0 (but can set = .01)
+prior[which(prior==0)] <- 0.01
+
+# Plot informative prior
+plot_prior(alpha.prior=prior,
+           source=source,
+           plot_save_pdf=FALSE,
+           plot_save_png=FALSE,
+           filename="prior_plot_3isodiet_inf")
+
+# Define model structure and write JAGS model file
+FinalModel_3Consumer <- "MixSIAR_3isomodel_kw_uninf.txt"   # Name of the JAGS model file
+resid_err <- TRUE
+process_err <- FALSE
+write_JAGS_model(FinalModel_3Consumer, resid_err, process_err, mix, source)
+
+library(Matrix)
+
+# Run the JAGS model ("very long" took ~3+ hours for my models use "test" to make sure model is running correctly)
+jags.uninf <- run_model(run="test",mix,source,discr,FinalModel_3Consumer)
+
+jags.uninf <- run_model(run="very long",mix,source,discr,model_filename)
+ 
+output_JAGS(jags.uninf, mix, source)
+
+library(devtools)
+library(MASS)
+library(R2jags)
+library(tidyverse)
+
+attach.jags(jags.uninf)
+post.Elite <- data.frame(Status = "Elite", C3.plants = p.fac1[,2,1], C3.animals = p.fac1[,2,2], C4.plants = p.fac1[,2,3], C4.animals = p.fac1[,2,4])
+post.Commoner.LateClassic <- data.frame(Status = "Commoner", C3 = p.fac2[,1,1], Commoner.LateClassic.C3 = p.fac2[,2,1], Commoner.MiddleClassic.C3 = p.fac2[,3,1]) 
+Commoner <- post.Commoner %>% gather(source,value, 2:5)
+Elite <-post.Elite %>% gather(source,value, 2:5)
+
+all <- rbind(Commoner, Elite)
+
+ggplot(aes(y = value, x = source, fill=source), data = all) + 
+  geom_boxplot(outlier.colour = NA) +
+  coord_cartesian(ylim = c(0,1)) +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1))+
+  scale_fill_manual(values=c("darkgreen", "blue", "lightblue", "lightgreen", "white", "pink", "lightyellow", "green"))+ 
+  xlab("Source") + 
+  ylab("Diet proportion") +
+  facet_wrap(~Status, ncol=2) +
+  theme(legend.position=c(.90, .8))
+
+install.packages("tidyverse")
+library(tidyverse)
+data <- StatusCondensedSummary_stats
+
+ggplot(data, aes(x = Status, y = Mean, fill = Source_proportion)) +
+  geom_bar(stat = "identity", position = "stack") + 
+  facet_wrap(~ Period) +
+  labs(x = "Status", y = "Average Proportion of Food Source", fill = "Food Sources") +
+  ggtitle("Comparison of food sources in Maya diet across time")+
+  theme_bw() +
+  scale_fill_manual(values=c("darkgreen", "darkblue", "lightgreen", "tan")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+desired_order <- c("Preclassic", "Early Classic", "Middle Classic", "Late Classic", "Terminal Classic", "Post Classic")
+
+# Reorder the levels of the Period factor according to the desired order
+data$Period <- factor(data$Period, levels = desired_order)
+
+# Plot with reordered time periods
+ggplot(data, aes(x = Status, y = Mean, fill = Source_proportion)) +
+  geom_bar(stat = "identity", position = "stack") + 
+  facet_wrap(~ Period) +
+  labs(x = "Status", y = "Average Proportion of Food Source", fill = "Food Sources") +
+  ggtitle("Comparison of food sources in Maya diet across time") +
+  theme_bw() +
+  scale_fill_manual(values = c("darkgreen", "tan", "darkblue", "lightgreen")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+data1 <- extraplotdata
+
+data1$Period <- as.factor(data1$Period)
+
+desired_order <- c("Preclassic", "Early Classic", "Middle Classic", "Late Classic", "Terminal Classic", "Postclassic")
+
+# Reorder the levels of the Period factor according to the desired order
+data1$Period <- factor(data1$Period, levels = desired_order)
+data1$Period <- as.factor(data1$Period)
+# Generate the plot
+ggplot(data1, aes(x=Period, y=Median, group=Source_proportion, shape = Source_proportion, color = Source_proportion)) +
+  geom_point() +
+  geom_ribbon(aes(ymin=`25%`, ymax=`75%`, fill=Source_proportion), alpha=0.5) +
+  geom_line(aes(color=Source_proportion)) +
+  labs(y="Proportion (Median)") +
+  ggtitle("Food source fluctuations in Maya diet across time")+ 
+  scale_fill_discrete(name = "Source_proportion") +
+  scale_color_discrete(name = "Source_proportion") +
+  scale_color_manual(values = c("#E3B448","#CBD18F", "#3A6B35","lightyellow")) +
+  scale_fill_manual(values = c("#E3B448", "#CBD18F", "#3A6B35", "lightyellow")) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x = element_text(angle = 55, hjust=0.95, vjust=0.95))
+
+
+ggsave(filename = "Mix_SIAR_model.tiff",
+       width=6, height=5, dpi=300)
+
